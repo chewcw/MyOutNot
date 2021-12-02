@@ -1,6 +1,12 @@
 package main
 
 import (
+	"io/ioutil"
+	"log"
+	"net/http"
+	"os"
+	"os/signal"
+	"syscall"
 	"time"
 )
 
@@ -10,7 +16,7 @@ func main() {
 	go (func(a *AuthzService) {
 		for {
 			a.Refresh()
-			time.Sleep(50 * time.Minute)
+			time.Sleep(20 * time.Minute)
 		}
 	})(authzService)
 
@@ -23,5 +29,19 @@ func main() {
 		}
 	})(authzService)
 
+	// don't sleep
+	go (func() {
+		for {
+			resp, _ := http.Get(app)
+			body, _ := ioutil.ReadAll(resp.Body)
+			log.Println(string(body))
+			time.Sleep(25 * time.Minute)
+		}
+	})()
+
 	authzService.r.Run()
+
+	sig := make(chan os.Signal, 1)
+	signal.Notify(sig, syscall.SIGINT)
+	<-sig
 }

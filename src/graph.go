@@ -63,9 +63,14 @@ func (g *GraphService) FetchEvents() {
 		if createdDateTime.Before(now) && createdDateTime.After(lastChecked) {
 			// attendees
 			attendees := []string{}
+			i := 0
 			for _, attendee := range event.Attendees {
+				if i > 4 {
+					continue
+				}
 				name := fmt.Sprintf("@%s", attendee.EmailAddress.Name)
 				attendees = append(attendees, name)
+				i++
 			}
 
 			// meeting start datetime
@@ -83,10 +88,19 @@ func (g *GraphService) FetchEvents() {
 				event.Subject,
 				startDateTimeStr,
 				strings.Join(attendees, ","),
-				"External",
+				externalOrInternal(event.Organizer),
 			)
 
 			notionService.CreatePage()
 		}
 	}
+}
+
+func externalOrInternal(organizer model.Attendee) string {
+	if strings.Contains(
+		organizer.EmailAddress.Address,
+		externalOrganizerEmail) {
+		return "External"
+	}
+	return "Internal"
 }

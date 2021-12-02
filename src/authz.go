@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 
+	"github.com/Azure/azure-sdk-for-go/storage"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 )
@@ -20,14 +21,20 @@ type AuthzService struct {
 	userOid      string
 	LoginURL     string
 	TokenURL     string
+	firstTime    bool
 }
 
 func NewAuthzService() *AuthzService {
 	authzService := AuthzService{
-		r:        gin.Default(),
-		LoginURL: "https://login.microsoft.com/" + tenantID + "/oauth2/v2.0/authorize",
-		TokenURL: "https://login.microsoft.com/" + tenantID + "/oauth2/v2.0/token",
+		r:         gin.Default(),
+		LoginURL:  "https://login.microsoft.com/" + tenantID + "/oauth2/v2.0/authorize",
+		TokenURL:  "https://login.microsoft.com/" + tenantID + "/oauth2/v2.0/token",
+		firstTime: true,
 	}
+
+	authzService.r.GET("/", func(c *gin.Context) {
+		c.JSON(200, "hello")
+	})
 
 	// redirect to MSFT login
 	authzService.r.GET("/login", func(c *gin.Context) {
@@ -78,6 +85,9 @@ func NewAuthzService() *AuthzService {
 			log.Fatal(err)
 		}
 		authzService.userOid = oid
+
+		// save access token and refresh token to azure table
+		insertAzureTable(authzService.accessToken, authzService.refreshToken)
 	})
 
 	return &authzService
@@ -86,8 +96,8 @@ func NewAuthzService() *AuthzService {
 // Refresh the access token
 func (a *AuthzService) Refresh() {
 	if a.refreshToken == "" {
-		log.Println("No refresh token, not going to refresh access token for now")
-		return
+		log.Println("getting refresh token from azure table")
+		a.accessToken, a.refreshToken = getAzureTable()
 	}
 
 	log.Println("Refreshing access token")
@@ -114,6 +124,21 @@ func (a *AuthzService) Refresh() {
 
 	a.accessToken = res["access_token"].(string)
 	a.refreshToken = res["refresh_token"].(string)
+
+	log.Printf("Got access_token: %s\n", a.accessToken)
+	log.Printf("Got refresh_token: %s\n", a.refreshToken)
+
+	a.firstTime = false
+
+	// parse the jwt
+	oid, err := parseJwt(a.accessToken, "oid")
+	if err != nil {
+		log.Fatal(err)
+	}
+	a.userOid = oid
+
+	// save refresh token to azure table
+	insertAzureTable(a.accessToken, a.refreshToken)
 }
 
 func parseJwt(accessToken string, claim string) (string, error) {
@@ -128,4 +153,44 @@ func parseJwt(accessToken string, claim string) (string, error) {
 		errorMsg := fmt.Sprintf("`%s` claim not found in the jwt token", claim)
 		return "", errors.New(errorMsg)
 	}
+}
+
+func insertAzureTable(accessToken, refreshToken string) {
+	client, err := storage.NewClientFromConnectionString(azureTableConnStr)
+	if err != nil {
+		log.Println(err)
+	}
+	tableCli := client.GetTableService()
+	table := tableCli.GetTableReference(azureTableName)
+	entity := table.GetEntityReference(azureTablePartitionKey, azureTableRowKey)
+	props := map[string]interface{}{
+		"accessToken":  accessToken,
+		"refreshToken": refreshToken,
+	}
+	entity.Properties = props
+	entity.Update(true, nil)
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	log.Println("inserted")
+}
+
+func getAzureTable() (accessToken, refreshToken string) {
+	client, err := storage.NewClientFromConnectionString(azureTableConnStr)
+	if err != nil {
+		log.Println(err)
+	}
+
+	tableCli := client.GetTableService()
+	table := tableCli.GetTableReference(azureTableName)
+	entities, err := table.QueryEntities(1, azureTableFullMetadata, nil)
+	if err != nil {
+		log.Println(err)
+		return "", ""
+	}
+	e := entities.Entities[0].Properties
+	accessToken = e["accessToken"].(string)
+	refreshToken = e["refreshToken"].(string)
+	return
 }

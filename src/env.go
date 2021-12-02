@@ -6,6 +6,8 @@ import (
 	"os"
 	"strconv"
 	"time"
+
+	"github.com/Azure/azure-sdk-for-go/storage"
 )
 
 var secret = os.Getenv("NOTION_SECRET")
@@ -14,6 +16,13 @@ var tenantID = os.Getenv("AZURE_TENANT_ID")
 var clientID = os.Getenv("AAD_CLIENT_ID")
 var clientSecret = os.Getenv("AAD_CLIENT_SECRET")
 var redirectURL = os.Getenv("AAD_REDIRECT_URL")
+var azureTableConnStr = os.Getenv("AZ_TABLE_CONN_STR")
+var azureTableName = os.Getenv("AZ_TABLE_NAME")
+var azureTablePartitionKey = os.Getenv("AZ_TABLE_PARTITION_KEY")
+var azureTableRowKey = os.Getenv("AZ_TABLE_ROW_KEY")
+var app = os.Getenv("APP")
+var externalOrganizerEmail = os.Getenv("EXTERNAL_ORGANIZER_EMAIL")
+var azureTableFullMetadata = storage.FullMetadata
 var checkEventsDuration time.Duration
 
 func init() {
