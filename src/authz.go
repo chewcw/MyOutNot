@@ -8,8 +8,9 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"os"
+	"path"
 
-	"github.com/Azure/azure-sdk-for-go/storage"
 	"github.com/dgrijalva/jwt-go"
 	"github.com/gin-gonic/gin"
 )
@@ -86,8 +87,8 @@ func NewAuthzService() *AuthzService {
 		}
 		authzService.userOid = oid
 
-		// save access token and refresh token to azure table
-		insertAzureTable(authzService.accessToken, authzService.refreshToken)
+		// save access token and refresh token locally
+		storeLocally(authzService.accessToken, authzService.refreshToken)
 	})
 
 	return &authzService
@@ -96,8 +97,13 @@ func NewAuthzService() *AuthzService {
 // Refresh the access token
 func (a *AuthzService) Refresh() {
 	if a.refreshToken == "" {
-		log.Println("getting refresh token from azure table")
-		a.accessToken, a.refreshToken = getAzureTable()
+		log.Println("getting refresh token locally")
+		var err error
+		a.accessToken, a.refreshToken, err = readLocally()
+		if err != nil {
+			log.Println(err)
+			return
+		}
 	}
 
 	log.Println("Refreshing access token")
@@ -138,7 +144,7 @@ func (a *AuthzService) Refresh() {
 	a.userOid = oid
 
 	// save refresh token to azure table
-	insertAzureTable(a.accessToken, a.refreshToken)
+	storeLocally(a.accessToken, a.refreshToken)
 }
 
 func parseJwt(accessToken string, claim string) (string, error) {
@@ -155,42 +161,41 @@ func parseJwt(accessToken string, claim string) (string, error) {
 	}
 }
 
-func insertAzureTable(accessToken, refreshToken string) {
-	client, err := storage.NewClientFromConnectionString(azureTableConnStr)
-	if err != nil {
-		log.Println(err)
-	}
-	tableCli := client.GetTableService()
-	table := tableCli.GetTableReference(azureTableName)
-	entity := table.GetEntityReference(azureTablePartitionKey, azureTableRowKey)
-	props := map[string]interface{}{
-		"accessToken":  accessToken,
-		"refreshToken": refreshToken,
-	}
-	entity.Properties = props
-	entity.Update(true, nil)
+func storeLocally(accessToken, refreshToken string) {
+	at := []byte(accessToken)
+	f1, err := os.Create(path.Join(localFileLocation, "access_token"))
 	if err != nil {
 		log.Println(err)
 		return
 	}
-	log.Println("inserted")
+	defer f1.Close()
+	if _, err = f1.Write(at); err != nil {
+		log.Println(err)
+		return
+	}
+
+	rt := []byte(refreshToken)
+	f2, err := os.Create(path.Join(localFileLocation, "refresh_token"))
+	if err != nil {
+		log.Println(err)
+		return
+	}
+	if _, err = f2.Write(rt); err != nil {
+		log.Println(err)
+		return
+	}
 }
 
-func getAzureTable() (accessToken, refreshToken string) {
-	client, err := storage.NewClientFromConnectionString(azureTableConnStr)
+func readLocally() (accessToken, refreshToken string, err error) {
+	at, err := os.ReadFile(path.Join(localFileLocation, "access_token"))
 	if err != nil {
-		log.Println(err)
+		return "", "", err
 	}
 
-	tableCli := client.GetTableService()
-	table := tableCli.GetTableReference(azureTableName)
-	entities, err := table.QueryEntities(1, azureTableFullMetadata, nil)
+	rt, err := os.ReadFile(path.Join(localFileLocation, "refresh_token"))
 	if err != nil {
-		log.Println(err)
-		return "", ""
+		return "", "", err
 	}
-	e := entities.Entities[0].Properties
-	accessToken = e["accessToken"].(string)
-	refreshToken = e["refreshToken"].(string)
-	return
+
+	return string(at), string(rt), nil
 }
