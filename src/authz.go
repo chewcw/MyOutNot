@@ -77,6 +77,15 @@ func NewAuthzService() *AuthzService {
 			log.Fatal(err)
 		}
 
+		if resp.StatusCode != 200 {
+			b, err := json.Marshal(res)
+			if err != nil {
+				log.Println(err)
+			}
+			log.Println(string(b))
+			return
+		}
+
 		authzService.accessToken = res["access_token"].(string)
 		authzService.refreshToken = res["refresh_token"].(string)
 
