@@ -33,7 +33,7 @@ func NewNotionService(title, localStartDateTime, attendees, typ string) *NotionS
 }
 
 func (n *NotionService) CreatePage() {
-	log.Printf("Creating notion page titled %s", n.Title)
+	log.Printf("Creating notion page titled \"%s\"", n.Title)
 
 	postBody := fmt.Sprintf(`
 {

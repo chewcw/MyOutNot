@@ -4,49 +4,25 @@ import (
 	"encoding/json"
 	"fmt"
 	"integration/model"
-	"io/ioutil"
 	"log"
-	"net/http"
 	"strings"
 	"time"
 )
 
 type GraphService struct {
-	authz    *AuthzService
-	tenantID string
 }
 
-func NewGraphService(authz *AuthzService) *GraphService {
-	return &GraphService{
-		authz:    authz,
-		tenantID: tenantID,
-	}
+func NewGraphService() *GraphService {
+	return &GraphService{}
 }
 
-func (g *GraphService) FetchEvents() {
-	if g.authz.accessToken == "" {
-		log.Println("No access token, not going to fetch events for now")
-		return
-	}
-
+func (g *GraphService) FetchEvents(body []byte) {
 	log.Println("Fetching events")
 
-	if g.authz.userOid == "" {
-		log.Println("User oid is empty")
+	if len(body) == 0 {
+		log.Println("No event")
+		return
 	}
-	req, _ := http.NewRequest(
-		"GET",
-		"https://graph.microsoft.com/v1.0/"+tenantID+"/users/"+g.authz.userOid+"/calendar/events",
-		nil)
-	req.Header.Add("Authorization", "Bearer "+g.authz.accessToken)
-	client := &http.Client{}
-	resp, err := client.Do(req)
-	if err != nil {
-		log.Println(err)
-	}
-
-	defer resp.Body.Close()
-	body, _ := ioutil.ReadAll(resp.Body)
 
 	var events model.RawEvent
 	if err := json.Unmarshal(body, &events); err != nil {
